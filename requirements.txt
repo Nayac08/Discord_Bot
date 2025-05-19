@@ -1,0 +1,8 @@
+discord
+dotenv
+requests
+os
+asyncio
+datetime
+flask
+threading
