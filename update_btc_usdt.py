@@ -3,9 +3,12 @@ from dotenv import load_dotenv
 import requests
 import os
 import asyncio
+from keep_alive import keep_alive
 
 intents = discord.Intents.default()
 intents.message_content = True
+
+keep_alive()
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
