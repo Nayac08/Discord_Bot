@@ -3,101 +3,106 @@ from dotenv import load_dotenv
 import requests
 import os
 import asyncio
-import datetime
-from flask import Flask
-from threading import Thread
 
 intents = discord.Intents.default()
 intents.message_content = True
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
-client = discord.Client(intents=intents)
-
-app = Flask('')
-
-
-@app.route('/')
-def home():
-    return "Bot is running!"
-
-
-def run():
-    app.run(host='0.0.0.0', port=8080)
-
-
-def keep_alive():
-    t = Thread(target=run)
-    t.start()
-
-
-@client.event
-async def on_ready():
-    print(f'We have logged in as {client.user}')
-    while (True):
-        await update_btc_usdt()
-        await asyncio.sleep(60)
-
-
-previous_price_btc_usdt = None
 CHANNEL_ID_UPDATE_BTC_USDT = os.getenv("CHANNEL_ID_UPDATE_BTC_USDT")
 if CHANNEL_ID_UPDATE_BTC_USDT is None:
     raise ValueError("CHANNEL_ID_UPDATE_BTC_USDT environment variable not set")
 
+client = discord.Client(intents=intents)
 
-async def update_btc_usdt():
-    global previous_price_btc_usdt
-    channel = client.get_channel(int(CHANNEL_ID_UPDATE_BTC_USDT))
+alert_higher = None
+alert_lower = None
+alert_channel_id = None
 
+
+async def get_btc_price():
     url = "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT"
-    response = requests.get(url)
-    if response.status_code == 200:
-        data = response.json()
-        price = float(data["price"])
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            return float(response.json()["price"])
+    except Exception as e:
+        print(f"Error fetching BTC price: {e}")
+    return None
 
-        # Compare with previous price
-        if previous_price_btc_usdt is None:
-            change_str = "No previous data"
-            emoji = "🔵"
-        else:
-            diff = price - previous_price_btc_usdt
-            percent_change = (diff / previous_price_btc_usdt) * 100
-            if diff > 0:
-                emoji = "📈"  # price up
-                change_str = f"Up {diff:.2f} USD (+{percent_change:.2f}%)"
-            elif diff < 0:
-                emoji = "📉"  # price down
-                change_str = f"Down {abs(diff):.2f} USD ({percent_change:.2f}%)"
-            else:
-                emoji = "⏸️"
-                change_str = "No change"
 
-        previous_price_btc_usdt = price  # update for next round
-
-        now = datetime.datetime.utcnow() + datetime.timedelta(hours=7)
-        time_str = now.strftime("%Y-%m-%d %H:%M:%S GMT+7")
-
-        embed = discord.Embed(title="💰 BTC/USDT Price Update",
-                              description=f"The current price of Bitcoin is:",
-                              color=0xf2a900)
-        embed.add_field(name="Price (USD)",
-                        value=f"${price:,.2f}",
-                        inline=False)
-        embed.add_field(name="Change",
-                        value=f"{emoji} {change_str}",
-                        inline=False)
-        embed.set_footer(text=f"Source: Binance API | Updated at {time_str}")
-        await channel.send(embed=embed)
-
+async def update_btc_usdt(channel):
+    price = await get_btc_price()
+    if price is not None:
+        await channel.send(f"BTC is ${price:,.2f}")
     else:
-        print(f"Failed to get data. Status code: {response.status_code}")
+        await channel.send("Failed to fetch BTC price.")
+
+
+@client.event
+async def on_ready():
+    print(f'Logged in as {client.user}')
+    client.loop.create_task(periodic_price_update())
+    client.loop.create_task(price_alert_monitor())
 
 
 @client.event
 async def on_message(message):
+    global alert_higher, alert_lower, alert_channel_id
+
     if message.author == client.user:
         return
 
-keep_alive()
+    if not message.content.startswith("!"):
+        return
 
-client.run(str(TOKEN))
+    content = message.content[1:].strip().lower()
+    channel = message.channel
+
+    if content == "now":
+        await update_btc_usdt(channel)
+
+    elif content.startswith("above ") or content.startswith("over "):
+        try:
+            alert_higher = float(content.split()[1])
+            alert_channel_id = channel.id
+            await channel.send(f"📈 Alert set! I will notify when BTC goes **above** ${alert_higher:,.2f}")
+        except:
+            await channel.send("⚠️ Invalid number format. Try: `!above 65000`")
+
+    elif content.startswith("below ") or content.startswith("under "):
+        try:
+            alert_lower = float(content.split()[1])
+            alert_channel_id = channel.id
+            await channel.send(f"📉 Alert set! I will notify when BTC goes **below** ${alert_lower:,.2f}")
+        except:
+            await channel.send("⚠️ Invalid number format. Try: `!below 30000`")
+
+    else:
+        await channel.send("Commands:\n`!now`\n`!above 65000`\n`!below 30000`")
+
+
+async def periodic_price_update():
+    await client.wait_until_ready()
+    channel = client.get_channel(int(CHANNEL_ID_UPDATE_BTC_USDT))
+    while not client.is_closed():
+        await update_btc_usdt(channel)
+        await asyncio.sleep(1800)
+
+
+async def price_alert_monitor():
+    global alert_higher, alert_lower, alert_channel_id
+    await client.wait_until_ready()
+    while not client.is_closed():
+        price = await get_btc_price()
+        if price is not None and alert_channel_id is not None:
+            channel = client.get_channel(alert_channel_id)
+            if alert_higher is not None and price >= alert_higher:
+                await channel.send(f"🚨 BTC is ${price:,.2f}, crossed **above** ${alert_higher:,.2f}!")
+                alert_higher = None
+            if alert_lower is not None and price <= alert_lower:
+                await channel.send(f"⚠️ BTC is ${price:,.2f}, dropped **below** ${alert_lower:,.2f}!")
+                alert_lower = None
+        await asyncio.sleep(1)
+
+client.run(TOKEN)
