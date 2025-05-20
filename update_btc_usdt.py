@@ -167,6 +167,6 @@ async def price_alert_monitor():
             if below is not None and price <= below:
                 await channel.send(f"⚠️ BTC is ${price:,.2f}, dropped **below** ${below:,.2f}!")
                 reset_alert(channel_id, "below")
-        await asyncio.sleep(5)
+        await asyncio.sleep(1)
 
 client.run(TOKEN)
