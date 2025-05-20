@@ -23,7 +23,7 @@ ALLOWED_TOKENS = {"BTC", "ETH", "ZIL"}
 # MongoDB setup
 mongo_client = MongoClient(MONGO_URI)
 db = mongo_client["update_crypto_price"]
-alerts_col = db["alerts"]
+# alerts_col = db["alerts"]
 subs_col = db["subscribed_channels"]
 
 
@@ -128,7 +128,7 @@ async def on_message(message):
         await channel.send(f"❌ Token `{token}` is not supported. Allowed tokens: BTC, ETH, ZIL")
         return
 
-    alert = get_alert(channel_id, token)
+    # alert = get_alert(channel_id, token)
 
     if cmd == "now":
         price_data = await get_price(token)
