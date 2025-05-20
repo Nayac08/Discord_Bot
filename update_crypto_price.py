@@ -35,12 +35,10 @@ async def get_price(symbol: str):
             f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}USDT")
         usd_price = float(usd_response.json()[
                           "price"]) if usd_response.status_code == 200 else None
-        print(usd_price)
         thb_response = requests.get(
-            "https://api.coingecko.com/api/v3/simple/price?ids=tether&vs_currencies=thb")
+            "https://api.frankfurter.app/latest?from=USD&to=THB")
         thb_rate = float(thb_response.json()[
-                         'tether']['thb']) if thb_response.status_code == 200 else None
-        print("THB", thb_rate)
+                         "rates"]["THB"]) if thb_response.status_code == 200 else None
         if usd_price and thb_rate:
             thb_price = usd_price * thb_rate
             return {"usd": usd_price, "thb": thb_price}
