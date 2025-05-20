@@ -29,13 +29,24 @@ subs_col = db["subscribed_channels"]
 
 # Get current price from Binance
 async def get_price(symbol: str):
-    url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol.upper()}USDT"
+    symbol = symbol.upper()
     try:
-        response = requests.get(url)
-        if response.status_code == 200:
-            return float(response.json()["price"])
+        usd_response = requests.get(
+            f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}USDT")
+        usd_price = float(usd_response.json()[
+                          "price"]) if usd_response.status_code == 200 else None
+
+        thb_response = requests.get(
+            "https://api.coingecko.com/api/v3/simple/price?ids=tether&vs_currencies=thb")
+        thb_rate = float(thb_response.json()[
+                         'tether']['thb']) if thb_response.status_code == 200 else None
+
+        if usd_price and thb_rate:
+            thb_price = usd_price * thb_rate
+            return {"usd": usd_price, "thb": thb_price}
     except Exception as e:
         print(f"Error fetching price for {symbol}: {e}")
+
     return None
 
 
@@ -85,7 +96,7 @@ def unsubscribe(channel_id, token):
 async def on_ready():
     print(f'Logged in as {client.user}')
     client.loop.create_task(periodic_price_update())
-    client.loop.create_task(price_alert_monitor())
+    # client.loop.create_task(price_alert_monitor())
 
 
 @client.event
@@ -104,12 +115,12 @@ async def on_message(message):
         await channel.send(
             "Commands:\n"
             "`!now [token]`\n"
-            "`!above [token] [price]`\n"
-            "`!below [token] [price]`\n"
+            # "`!above [token] [price]`\n"
+            # "`!below [token] [price]`\n"
             "`!sub [token]`\n"
             "`!unsub [token]`\n"
             "Allowed tokens: BTC, ETH, ZIL\n"
-            "Example: `!above BTC 65000`, `!below ZIL 0.03`"
+            # "Example: `!above BTC 65000`, `!below ZIL 0.03`"
         )
         return
 
@@ -120,25 +131,27 @@ async def on_message(message):
     alert = get_alert(channel_id, token)
 
     if cmd == "now":
-        price = await get_price(token)
-        if price:
-            await channel.send(f"{token} is ${price:,.6f}")
+        price_data = await get_price(token)
+        if price_data:
+            await channel.send(
+                f"{token} is ${price_data['usd']:,.4f} ≈ ฿{price_data['thb']:,.4f}"
+            )
         else:
             await channel.send(f"⚠️ Could not fetch {token} price.")
-    elif cmd in ("above", "over") and len(parts) == 3:
-        try:
-            value = float(parts[2])
-            set_alert(channel_id, token, above=value, below=alert.get("below"))
-            await channel.send(f"📈 Alert set! Notify when {token} goes **above** ${value:,.6f}")
-        except:
-            await channel.send("⚠️ Invalid format. Try: `!above BTC 65000`")
-    elif cmd in ("below", "under") and len(parts) == 3:
-        try:
-            value = float(parts[2])
-            set_alert(channel_id, token, above=alert.get("above"), below=value)
-            await channel.send(f"📉 Alert set! Notify when {token} goes **below** ${value:,.6f}")
-        except:
-            await channel.send("⚠️ Invalid format. Try: `!below ETH 3000`")
+    # elif cmd in ("above", "over") and len(parts) == 3:
+    #     try:
+    #         value = float(parts[2])
+    #         set_alert(channel_id, token, above=value, below=alert.get("below"))
+    #         await channel.send(f"📈 Alert set! Notify when {token} goes **above** ${value:,.6f}")
+    #     except:
+    #         await channel.send("⚠️ Invalid format. Try: `!above BTC 65000`")
+    # elif cmd in ("below", "under") and len(parts) == 3:
+    #     try:
+    #         value = float(parts[2])
+    #         set_alert(channel_id, token, above=alert.get("above"), below=value)
+    #         await channel.send(f"📉 Alert set! Notify when {token} goes **below** ${value:,.6f}")
+    #     except:
+    #         await channel.send("⚠️ Invalid format. Try: `!below ETH 3000`")
     elif cmd == "sub":
         subscribe(channel_id, token)
         await channel.send(f"✅ Subscribed to {token} 45-min updates.")
@@ -149,12 +162,12 @@ async def on_message(message):
         await channel.send(
             "Commands:\n"
             "`!now [token]`\n"
-            "`!above [token] [price]`\n"
-            "`!below [token] [price]`\n"
+            # "`!above [token] [price]`\n"
+            # "`!below [token] [price]`\n"
             "`!sub [token]`\n"
             "`!unsub [token]`\n"
             "Allowed tokens: BTC, ETH, ZIL\n"
-            "Example: `!above BTC 65000`, `!below ZIL 0.03`"
+            # "Example: `!above BTC 65000`, `!below ZIL 0.03`"
         )
 
 
@@ -163,33 +176,35 @@ async def periodic_price_update():
     while not client.is_closed():
         for doc in subs_col.find():
             token = doc["token"]
-            price = await get_price(token)
+            price_data = await get_price(token)  # Get both USD and THB
             channel = client.get_channel(doc["channel_id"])
-            if channel and price:
-                await channel.send(f"[45-Min Update] {token} is ${price:,.6f}")
+            if channel and price_data:
+                await channel.send(
+                    f"[45-Min Update] {token} is ${price_data['usd']:,.4f} ≈ ฿{price_data['thb']:,.4f}"
+                )
         await asyncio.sleep(2700)  # 45 minutes
 
 
-async def price_alert_monitor():
-    await client.wait_until_ready()
-    while not client.is_closed():
-        for alert in alerts_col.find():
-            token = alert["token"]
-            price = await get_price(token)
-            if price is None:
-                continue
-            channel = client.get_channel(alert["channel_id"])
-            if not channel:
-                continue
-            above = alert.get("above")
-            below = alert.get("below")
-            if above is not None and price >= above:
-                await channel.send(f"🚨 {token} is ${price:,.6f}, crossed **above** ${above:,.6f}!")
-                reset_alert(alert["channel_id"], token, "above")
-            if below is not None and price <= below:
-                await channel.send(f"⚠️ {token} is ${price:,.6f}, dropped **below** ${below:,.6f}!")
-                reset_alert(alert["channel_id"], token, "below")
-        await asyncio.sleep(1)
+# async def price_alert_monitor():
+#     await client.wait_until_ready()
+#     while not client.is_closed():
+#         for alert in alerts_col.find():
+#             token = alert["token"]
+#             price = await get_price(token)
+#             if price is None:
+#                 continue
+#             channel = client.get_channel(alert["channel_id"])
+#             if not channel:
+#                 continue
+#             above = alert.get("above")
+#             below = alert.get("below")
+#             if above is not None and price >= above:
+#                 await channel.send(f"🚨 {token} is ${price:,.6f}, crossed **above** ${above:,.6f}!")
+#                 reset_alert(alert["channel_id"], token, "above")
+#             if below is not None and price <= below:
+#                 await channel.send(f"⚠️ {token} is ${price:,.6f}, dropped **below** ${below:,.6f}!")
+#                 reset_alert(alert["channel_id"], token, "below")
+#         await asyncio.sleep(1)
 
 
 client.run(TOKEN)
