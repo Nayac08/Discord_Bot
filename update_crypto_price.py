@@ -35,12 +35,12 @@ async def get_price(symbol: str):
             f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}USDT")
         usd_price = float(usd_response.json()[
                           "price"]) if usd_response.status_code == 200 else None
-
+        print(usd_price)
         thb_response = requests.get(
             "https://api.coingecko.com/api/v3/simple/price?ids=tether&vs_currencies=thb")
         thb_rate = float(thb_response.json()[
                          'tether']['thb']) if thb_response.status_code == 200 else None
-
+        print("THB", thb_rate)
         if usd_price and thb_rate:
             thb_price = usd_price * thb_rate
             return {"usd": usd_price, "thb": thb_price}
@@ -51,28 +51,28 @@ async def get_price(symbol: str):
 
 
 # MongoDB function
-def get_alert(channel_id, token):
-    return alerts_col.find_one({"channel_id": channel_id, "token": token.upper()}) or {
-        "channel_id": channel_id,
-        "token": token.upper(),
-        "above": None,
-        "below": None
-    }
+# def get_alert(channel_id, token):
+#     return alerts_col.find_one({"channel_id": channel_id, "token": token.upper()}) or {
+#         "channel_id": channel_id,
+#         "token": token.upper(),
+#         "above": None,
+#         "below": None
+#     }
 
 
-def set_alert(channel_id, token, above=None, below=None):
-    alerts_col.update_one(
-        {"channel_id": channel_id, "token": token.upper()},
-        {"$set": {"above": above, "below": below}},
-        upsert=True
-    )
+# def set_alert(channel_id, token, above=None, below=None):
+#     alerts_col.update_one(
+#         {"channel_id": channel_id, "token": token.upper()},
+#         {"$set": {"above": above, "below": below}},
+#         upsert=True
+#     )
 
 
-def reset_alert(channel_id, token, direction: str):
-    alerts_col.update_one(
-        {"channel_id": channel_id, "token": token.upper()},
-        {"$set": {direction: None}}
-    )
+# def reset_alert(channel_id, token, direction: str):
+#     alerts_col.update_one(
+#         {"channel_id": channel_id, "token": token.upper()},
+#         {"$set": {direction: None}}
+#     )
 
 
 def is_subscribed(channel_id, token):
