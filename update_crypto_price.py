@@ -131,9 +131,14 @@ async def on_message(message):
     if cmd == "now":
         price_data = await get_price(token)
         if price_data:
-            await channel.send(
-                f"{token} is ${price_data['usd']:,.4f} ≈ ฿{price_data['thb']:,.4f}"
-            )
+            if (token == "ZIL"):
+                await channel.send(
+                    f"{token} is ${price_data['usd']:,.4f} ≈ ฿{price_data['thb']:,.4f}"
+                )
+            else:
+                await channel.send(
+                    f"{token} is ${int(price_data['usd']):,} ≈ ฿{int(price_data['thb']):,}"
+                )
         else:
             await channel.send(f"⚠️ Could not fetch {token} price.")
     # elif cmd in ("above", "over") and len(parts) == 3:
@@ -177,10 +182,15 @@ async def periodic_price_update():
             price_data = await get_price(token)  # Get both USD and THB
             channel = client.get_channel(doc["channel_id"])
             if channel and price_data:
-                await channel.send(
-                    f"[45-Min Update] {token} is ${price_data['usd']:,.4f} ≈ ฿{price_data['thb']:,.4f}"
-                )
-        await asyncio.sleep(2700)  # 45 minutes
+                if (token == "ZIL"):
+                    await channel.send(
+                        f"[1-Hour Update] {token} is ${price_data['usd']:,.4f} ≈ ฿{price_data['thb']:,.4f}"
+                    )
+                else:
+                    await channel.send(
+                        f"[1-Hour Update] {token} is ${int(price_data['usd']):,} ≈ ฿{int(price_data['thb']):,}"
+                    )
+        await asyncio.sleep(3600)  # 1 hour
 
 
 # async def price_alert_monitor():
