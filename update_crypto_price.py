@@ -92,9 +92,20 @@ def unsubscribe(channel_id, token):
 
 @client.event
 async def on_ready():
-    print(f'Logged in as {client.user}')
-    client.loop.create_task(periodic_price_update())
-    # client.loop.create_task(price_alert_monitor())
+    print(f"🟢 Logged in as {client.user}", flush=True)
+
+    # Always (re)start the background task on ready
+    if hasattr(client, 'price_update_task'):
+        if client.price_update_task.done():
+            print("🔄 Restarting periodic_price_update (previous task ended)", flush=True)
+            client.price_update_task = client.loop.create_task(
+                periodic_price_update())
+        else:
+            print("✅ periodic_price_update already running", flush=True)
+    else:
+        print("🚀 Starting periodic_price_update for the first time", flush=True)
+        client.price_update_task = client.loop.create_task(
+            periodic_price_update())
 
 
 @client.event
@@ -176,20 +187,43 @@ async def on_message(message):
 
 async def periodic_price_update():
     await client.wait_until_ready()
+    print("🚀 Started periodic_price_update", flush=True)
     while not client.is_closed():
-        for doc in subs_col.find():
-            token = doc["token"]
-            price_data = await get_price(token)  # Get both USD and THB
-            channel = client.get_channel(doc["channel_id"])
-            if channel and price_data:
-                if (token == "ZIL"):
-                    await channel.send(
-                        f"[1-Hour Update] {token} is ${price_data['usd']:,.4f} ≈ ฿{price_data['thb']:,.4f}"
-                    )
-                else:
-                    await channel.send(
-                        f"[1-Hour Update] {token} is ${int(price_data['usd']):,} ≈ ฿{int(price_data['thb']):,}"
-                    )
+        try:
+            subscribers = list(subs_col.find())
+            print(
+                f"🔍 Found {len(subscribers)} subscribed channels", flush=True)
+
+            for doc in subscribers:
+                token = doc.get("token")
+                channel_id = doc.get("channel_id")
+                if not token or not channel_id:
+                    print(
+                        f"❌ Missing token or channel_id in doc: {doc}", flush=True)
+                    continue
+
+                channel = client.get_channel(channel_id)
+                if not channel:
+                    print(f"⚠️ Channel {channel_id} not found", flush=True)
+                    continue
+
+                price_data = await get_price(token)
+                if not price_data:
+                    print(f"⚠️ Failed to fetch price for {token}", flush=True)
+                    continue
+
+                msg = (
+                    f"[1-Hour Update] {token} is ${price_data['usd']:,.4f} ≈ ฿{price_data['thb']:,.4f}"
+                    if token == "ZIL"
+                    else f"[1-Hour Update] {token} is ${int(price_data['usd']):,} ≈ ฿{int(price_data['thb']):,}"
+                )
+                await channel.send(msg)
+                print(
+                    f"✅ Sent update for {token} to channel {channel_id}", flush=True)
+
+        except Exception as e:
+            print(f"❌ Exception in periodic update: {e}", flush=True)
+
         await asyncio.sleep(3600)  # 1 hour
 
 
